@@ -1,105 +1,100 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Top Down RPG</title>
-<style>
-body {
-    margin: 0;
-    overflow: hidden;
-    background: #0b0b17;
-    font-family: monospace;
-}
-canvas {
-    display: block;
-}
-#ui {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    color: white;
-}
-</style>
-</head>
-<body>
-
-<canvas id="game"></canvas>
-<div id="ui"></div>
-
 <script>
-// ================= CANVAS =================
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+canvas.width = innerWidth;
+canvas.height = innerHeight;
 
-// ================= GAME STATE =================
-let gameState = "menu"; // menu, weaponSelect, playing, gameOver
+let gameState = "menu";
 let selectedWeapon = null;
 
-// ================= INPUT =================
 const keys = {};
-window.addEventListener("keydown", e => keys[e.key] = true);
-window.addEventListener("keyup", e => keys[e.key] = false);
-window.addEventListener("click", handleClick);
+addEventListener("keydown", e => keys[e.key] = true);
+addEventListener("keyup", e => keys[e.key] = false);
+addEventListener("click", handleClick);
+
+// ================= UTIL =================
+function dist(a,b,c,d){ return Math.hypot(a-c,b-d); }
 
 // ================= PLAYER =================
 class Player {
-    constructor() {
+    constructor(){
         this.x = canvas.width/2;
         this.y = canvas.height/2;
-        this.size = 30;
+        this.size = 22;
         this.speed = 4;
         this.hp = 100;
         this.level = 1;
         this.xp = 0;
-        this.weaponCooldown = 0;
+        this.cooldown = 0;
+        this.angle = 0;
     }
 
-    move() {
-        if(keys["w"] || keys["ArrowUp"]) this.y -= this.speed;
-        if(keys["s"] || keys["ArrowDown"]) this.y += this.speed;
-        if(keys["a"] || keys["ArrowLeft"]) this.x -= this.speed;
-        if(keys["d"] || keys["ArrowRight"]) this.x += this.speed;
-
-        this.x = Math.max(0, Math.min(canvas.width, this.x));
-        this.y = Math.max(0, Math.min(canvas.height, this.y));
+    move(){
+        if(keys.w||keys.ArrowUp) this.y -= this.speed;
+        if(keys.s||keys.ArrowDown) this.y += this.speed;
+        if(keys.a||keys.ArrowLeft) this.x -= this.speed;
+        if(keys.d||keys.ArrowRight) this.x += this.speed;
     }
 
-    draw() {
-        ctx.fillStyle = "#00ffff";
+    autoAim(){
+        let nearest = null;
+        let min = Infinity;
+        enemies.forEach(e=>{
+            const d = dist(this.x,this.y,e.x,e.y);
+            if(d < min){ min=d; nearest=e; }
+        });
+        if(nearest){
+            this.angle = Math.atan2(nearest.y-this.y,nearest.x-this.x);
+            return nearest;
+        }
+        return null;
+    }
+
+    attack(){
+        if(this.cooldown>0) return;
+        const target = this.autoAim();
+        if(!target) return;
+
+        if(selectedWeapon==="Sword"){
+            slashes.push(new Slash(this.x,this.y,this.angle));
+            this.cooldown = 20;
+        }
+        if(selectedWeapon==="Bow"){
+            projectiles.push(new Arrow(this.x,this.y,this.angle));
+            this.cooldown = 25;
+        }
+        if(selectedWeapon==="Staff"){
+            projectiles.push(new Magic(this.x,this.y,target));
+            this.cooldown = 35;
+        }
+    }
+
+    draw(){
+        ctx.save();
+        ctx.translate(this.x,this.y);
+
+        // body
+        ctx.fillStyle="#00ffff";
         ctx.beginPath();
-        ctx.moveTo(this.x, this.y - this.size);
-        ctx.lineTo(this.x - this.size, this.y + this.size);
-        ctx.lineTo(this.x + this.size, this.y + this.size);
+        ctx.arc(0,5,10,0,Math.PI*2);
+        ctx.fill();
+
+        // head
+        ctx.fillStyle="#e0ffff";
+        ctx.beginPath();
+        ctx.arc(0,-10,6,0,Math.PI*2);
+        ctx.fill();
+
+        // cloak
+        ctx.fillStyle="#0088aa";
+        ctx.beginPath();
+        ctx.moveTo(-12,8);
+        ctx.lineTo(12,8);
+        ctx.lineTo(0,30);
         ctx.closePath();
         ctx.fill();
-    }
 
-    attack() {
-        if(this.weaponCooldown > 0) return;
-
-        if(selectedWeapon === "Sword") {
-            projectiles.push(new Slash(this.x, this.y));
-            this.weaponCooldown = 20;
-        }
-        if(selectedWeapon === "Bow") {
-            projectiles.push(new Arrow(this.x, this.y));
-            this.weaponCooldown = 30;
-        }
-        if(selectedWeapon === "Staff") {
-            projectiles.push(new MagicBall(this.x, this.y));
-            this.weaponCooldown = 40;
-        }
-    }
-
-    gainXP(amount){
-        this.xp += amount;
-        if(this.xp >= this.level * 50){
-            this.xp = 0;
-            this.level++;
-            this.hp += 20;
-        }
+        ctx.restore();
     }
 }
 
@@ -110,198 +105,171 @@ class Enemy {
     constructor(){
         this.x = Math.random()*canvas.width;
         this.y = Math.random()*canvas.height;
-        this.size = 25;
+        this.size = 18;
         this.hp = 40;
     }
-
     update(){
-        const dx = player.x - this.x;
-        const dy = player.y - this.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        this.x += (dx/dist)*1.5;
-        this.y += (dy/dist)*1.5;
-
-        if(dist < this.size){
-            player.hp -= 0.2;
-        }
-    }
-
-    draw(){
-        ctx.fillStyle = "#ff4444";
-        ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
-    }
-}
-
-let enemies = [];
-for(let i=0;i<6;i++) enemies.push(new Enemy());
-
-// ================= PROJECTILES =================
-class Arrow {
-    constructor(x,y){
-        this.x = x;
-        this.y = y;
-        this.speed = 8;
-        this.size = 10;
-    }
-    update(){
-        this.y -= this.speed;
+        const a = Math.atan2(player.y-this.y,player.x-this.x);
+        this.x += Math.cos(a)*1.3;
+        this.y += Math.sin(a)*1.3;
+        if(dist(this.x,this.y,player.x,player.y)<20) player.hp-=0.2;
     }
     draw(){
-        ctx.fillStyle = "yellow";
-        ctx.fillRect(this.x-2,this.y-10,4,20);
-    }
-}
-
-class MagicBall {
-    constructor(x,y){
-        this.x = x;
-        this.y = y;
-        this.speed = 5;
-        this.size = 12;
-    }
-    update(){
-        this.y -= this.speed;
-    }
-    draw(){
-        ctx.fillStyle = "#aa00ff";
+        ctx.fillStyle="#ff4444";
         ctx.beginPath();
         ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
         ctx.fill();
     }
 }
 
+let enemies=[];
+for(let i=0;i<6;i++) enemies.push(new Enemy());
+
+// ================= SLASH =================
 class Slash {
-    constructor(x,y){
-        this.x = x;
-        this.y = y;
-        this.size = 50;
-        this.life = 10;
+    constructor(x,y,angle){
+        this.x=x;
+        this.y=y;
+        this.angle=angle;
+        this.life=12;
     }
-    update(){
-        this.life--;
-    }
+    update(){ this.life--; }
     draw(){
-        ctx.strokeStyle = "white";
+        ctx.strokeStyle="white";
+        ctx.lineWidth=6;
         ctx.beginPath();
-        ctx.arc(this.x,this.y,this.size,0,Math.PI);
+        ctx.arc(
+            this.x,
+            this.y,
+            50,
+            this.angle-0.8+(12-this.life)*0.05,
+            this.angle+0.8+(12-this.life)*0.05
+        );
         ctx.stroke();
     }
 }
 
-let projectiles = [];
+let slashes=[];
 
-// ================= UI =================
-function updateUI(){
-    document.getElementById("ui").innerText =
-        `HP: ${Math.floor(player.hp)} | Level: ${player.level} | XP: ${player.xp} | Weapon: ${selectedWeapon}`;
+// ================= PROJECTILES =================
+class Arrow {
+    constructor(x,y,a){
+        this.x=x;
+        this.y=y;
+        this.vx=Math.cos(a)*8;
+        this.vy=Math.sin(a)*8;
+    }
+    update(){ this.x+=this.vx; this.y+=this.vy; }
+    draw(){
+        ctx.strokeStyle="yellow";
+        ctx.beginPath();
+        ctx.moveTo(this.x,this.y);
+        ctx.lineTo(this.x-this.vx*2,this.y-this.vy*2);
+        ctx.stroke();
+    }
 }
+
+class Magic {
+    constructor(x,y,target){
+        this.x=x;
+        this.y=y;
+        this.target=target;
+    }
+    update(){
+        const a=Math.atan2(this.target.y-this.y,this.target.x-this.x);
+        this.x+=Math.cos(a)*4;
+        this.y+=Math.sin(a)*4;
+    }
+    draw(){
+        ctx.fillStyle="#aa00ff";
+        ctx.beginPath();
+        ctx.arc(this.x,this.y,6,0,Math.PI*2);
+        ctx.fill();
+    }
+}
+
+let projectiles=[];
 
 // ================= MENU =================
-function drawMenu(){
-    ctx.fillStyle = "#0b0b17";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle = "#00ffff";
-    ctx.font = "60px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("TOP DOWN RPG", canvas.width/2, canvas.height/2 - 40);
-    ctx.font = "25px monospace";
-    ctx.fillText("Press ENTER", canvas.width/2, canvas.height/2 + 20);
-
-    if(keys["Enter"]) gameState = "weaponSelect";
-}
-
-// ================= WEAPON SELECT =================
-const weapons = ["Sword","Bow","Staff"];
-
-function drawWeaponSelect(){
-    ctx.fillStyle = "#111122";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle = "white";
-    ctx.font = "40px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("Choose Your Weapon", canvas.width/2, 150);
-
-    weapons.forEach((w,i)=>{
-        ctx.fillStyle = "#00ffff";
-        ctx.fillRect(canvas.width/2 - 150, 250 + i*100, 300, 60);
-        ctx.fillStyle = "black";
-        ctx.fillText(w, canvas.width/2, 290 + i*100);
-    });
-}
+const weapons=["Sword","Bow","Staff"];
 
 function handleClick(e){
-    if(gameState === "weaponSelect"){
+    if(gameState==="weapon"){
         weapons.forEach((w,i)=>{
-            let x = canvas.width/2 - 150;
-            let y = 250 + i*100;
-            if(e.clientX > x && e.clientX < x+300 &&
-               e.clientY > y && e.clientY < y+60){
-                selectedWeapon = w;
-                gameState = "playing";
+            if(e.clientX>canvas.width/2-150 &&
+               e.clientX<canvas.width/2+150 &&
+               e.clientY>250+i*90 &&
+               e.clientY<310+i*90){
+                selectedWeapon=w;
+                gameState="play";
             }
         });
     }
 }
 
-// ================= GAME LOOP =================
+function drawMenu(){
+    ctx.fillStyle="#000";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle="#00ffff";
+    ctx.font="60px monospace";
+    ctx.textAlign="center";
+    ctx.fillText("RPG",canvas.width/2,canvas.height/2);
+    ctx.font="25px monospace";
+    ctx.fillText("Press ENTER",canvas.width/2,canvas.height/2+40);
+    if(keys.Enter) gameState="weapon";
+}
+
+function drawWeapon(){
+    ctx.fillStyle="#111";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle="white";
+    ctx.font="40px monospace";
+    ctx.fillText("Choose Weapon",canvas.width/2,150);
+    weapons.forEach((w,i)=>{
+        ctx.fillStyle="#00ffff";
+        ctx.fillRect(canvas.width/2-150,250+i*90,300,60);
+        ctx.fillStyle="black";
+        ctx.fillText(w,canvas.width/2,290+i*90);
+    });
+}
+
+// ================= LOOP =================
 function loop(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    if(gameState === "menu") drawMenu();
-    else if(gameState === "weaponSelect") drawWeaponSelect();
-    else if(gameState === "playing"){
-        ctx.fillStyle = "#1a1a2e";
-        ctx.fillRect(0,0,canvas.width,canvas.height);
-
+    if(gameState==="menu") drawMenu();
+    else if(gameState==="weapon") drawWeapon();
+    else if(gameState==="play"){
         player.move();
         if(keys[" "]) player.attack();
-        if(player.weaponCooldown > 0) player.weaponCooldown--;
+        if(player.cooldown>0) player.cooldown--;
 
         player.draw();
 
-        enemies.forEach((enemy, ei)=>{
-            enemy.update();
-            enemy.draw();
-
+        enemies.forEach((e,ei)=>{
+            e.update();
+            e.draw();
+            slashes.forEach(s=>{
+                if(dist(e.x,e.y,s.x,s.y)<50) e.hp-=3;
+            });
             projectiles.forEach((p,pi)=>{
-                const dx = enemy.x - p.x;
-                const dy = enemy.y - p.y;
-                if(Math.sqrt(dx*dx+dy*dy) < enemy.size){
-                    enemy.hp -= 20;
+                if(dist(e.x,e.y,p.x,p.y)<18){
+                    e.hp-=10;
                     projectiles.splice(pi,1);
                 }
             });
-
-            if(enemy.hp <= 0){
-                player.gainXP(20);
+            if(e.hp<=0){
                 enemies.splice(ei,1);
                 enemies.push(new Enemy());
             }
         });
 
-        projectiles.forEach((p,i)=>{
-            p.update();
-            p.draw();
-            if(p.life !== undefined && p.life <= 0)
-                projectiles.splice(i,1);
-        });
+        slashes.forEach((s,i)=>{ s.update(); s.draw(); if(s.life<=0) slashes.splice(i,1); });
+        projectiles.forEach((p,i)=>{ p.update(); p.draw(); });
 
-        updateUI();
-
-        if(player.hp <= 0) gameState = "gameOver";
-    }
-    else if(gameState === "gameOver"){
-        ctx.fillStyle = "black";
-        ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.fillStyle = "red";
-        ctx.font = "60px monospace";
-        ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
     }
 
     requestAnimationFrame(loop);
 }
-
 loop();
 </script>
-</body>
-</html>
