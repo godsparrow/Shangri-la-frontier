@@ -1,87 +1,103 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Shangri-La RPG Prototype</title>
+<title>Top Down RPG</title>
 <style>
-  body {
+body {
     margin: 0;
     overflow: hidden;
     background: #0b0b17;
     font-family: monospace;
-  }
-  canvas {
+}
+canvas {
     display: block;
-    background: #1a1a2e;
-  }
-  #ui {
+}
+#ui {
     position: absolute;
     top: 10px;
     left: 10px;
-    color: #fff;
-    z-index: 100;
-  }
+    color: white;
+}
 </style>
 </head>
 <body>
+
 <canvas id="game"></canvas>
-<div id="ui">
-  <div id="stats">HP: 100 | XP: 0 | Level: 1</div>
-</div>
+<div id="ui"></div>
+
 <script>
-// =================== GAME FRAME =================== //
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+// ================= CANVAS =================
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-});
+// ================= GAME STATE =================
+let gameState = "menu"; // menu, weaponSelect, playing, gameOver
+let selectedWeapon = null;
 
-// =================== GAME STATE =================== //
-let gameState = "menu"; // menu, playing, boss
+// ================= INPUT =================
+const keys = {};
+window.addEventListener("keydown", e => keys[e.key] = true);
+window.addEventListener("keyup", e => keys[e.key] = false);
+window.addEventListener("click", handleClick);
 
-// =================== PLAYER CLASS =================== //
+// ================= PLAYER =================
 class Player {
     constructor() {
         this.x = canvas.width/2;
         this.y = canvas.height/2;
         this.size = 30;
-        this.color = "#00ffcc";
         this.speed = 4;
         this.hp = 100;
-        this.xp = 0;
         this.level = 1;
+        this.xp = 0;
+        this.weaponCooldown = 0;
+    }
+
+    move() {
+        if(keys["w"] || keys["ArrowUp"]) this.y -= this.speed;
+        if(keys["s"] || keys["ArrowDown"]) this.y += this.speed;
+        if(keys["a"] || keys["ArrowLeft"]) this.x -= this.speed;
+        if(keys["d"] || keys["ArrowRight"]) this.x += this.speed;
+
+        this.x = Math.max(0, Math.min(canvas.width, this.x));
+        this.y = Math.max(0, Math.min(canvas.height, this.y));
     }
 
     draw() {
-        ctx.fillStyle = this.color;
+        ctx.fillStyle = "#00ffff";
         ctx.beginPath();
-        ctx.moveTo(this.x, this.y - this.size/2);
-        ctx.lineTo(this.x - this.size/2, this.y + this.size/2);
-        ctx.lineTo(this.x + this.size/2, this.y + this.size/2);
+        ctx.moveTo(this.x, this.y - this.size);
+        ctx.lineTo(this.x - this.size, this.y + this.size);
+        ctx.lineTo(this.x + this.size, this.y + this.size);
         ctx.closePath();
         ctx.fill();
     }
 
-    move(keys) {
-        if(keys['ArrowUp'] || keys['w']) this.y -= this.speed;
-        if(keys['ArrowDown'] || keys['s']) this.y += this.speed;
-        if(keys['ArrowLeft'] || keys['a']) this.x -= this.speed;
-        if(keys['ArrowRight'] || keys['d']) this.x += this.speed;
+    attack() {
+        if(this.weaponCooldown > 0) return;
 
-        // Keep player inside canvas
-        this.x = Math.max(this.size/2, Math.min(canvas.width - this.size/2, this.x));
-        this.y = Math.max(this.size/2, Math.min(canvas.height - this.size/2, this.y));
+        if(selectedWeapon === "Sword") {
+            projectiles.push(new Slash(this.x, this.y));
+            this.weaponCooldown = 20;
+        }
+        if(selectedWeapon === "Bow") {
+            projectiles.push(new Arrow(this.x, this.y));
+            this.weaponCooldown = 30;
+        }
+        if(selectedWeapon === "Staff") {
+            projectiles.push(new MagicBall(this.x, this.y));
+            this.weaponCooldown = 40;
+        }
     }
 
-    gainXP(amount) {
+    gainXP(amount){
         this.xp += amount;
-        if(this.xp >= this.level * 50) {
-            this.level++;
+        if(this.xp >= this.level * 50){
             this.xp = 0;
+            this.level++;
             this.hp += 20;
         }
     }
@@ -89,147 +105,203 @@ class Player {
 
 const player = new Player();
 
-// =================== ENEMY CLASS =================== //
+// ================= ENEMY =================
 class Enemy {
-    constructor(x, y, size=25, color="#ff3333", hp=30) {
-        this.x = x;
-        this.y = y;
-        this.size = size;
-        this.color = color;
-        this.hp = hp;
+    constructor(){
+        this.x = Math.random()*canvas.width;
+        this.y = Math.random()*canvas.height;
+        this.size = 25;
+        this.hp = 40;
     }
 
-    draw() {
-        ctx.fillStyle = this.color;
+    update(){
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        this.x += (dx/dist)*1.5;
+        this.y += (dy/dist)*1.5;
+
+        if(dist < this.size){
+            player.hp -= 0.2;
+        }
+    }
+
+    draw(){
+        ctx.fillStyle = "#ff4444";
         ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
     }
-
-    update(player) {
-        // Simple chasing AI
-        const dx = player.x - this.x;
-        const dy = player.y - this.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if(dist > 0) {
-            this.x += (dx/dist) * 1.5;
-            this.y += (dy/dist) * 1.5;
-        }
-
-        // Collision damage
-        if(dist < (this.size/2 + player.size/2)) {
-            player.hp -= 0.1; // continuous damage
-        }
-    }
 }
 
-// =================== BOSS CLASS =================== //
-class Boss {
-    constructor(x, y) {
+let enemies = [];
+for(let i=0;i<6;i++) enemies.push(new Enemy());
+
+// ================= PROJECTILES =================
+class Arrow {
+    constructor(x,y){
         this.x = x;
         this.y = y;
-        this.size = 80;
-        this.color = "#aa33ff";
-        this.hp = 500;
-        this.phase = 1;
+        this.speed = 8;
+        this.size = 10;
     }
+    update(){
+        this.y -= this.speed;
+    }
+    draw(){
+        ctx.fillStyle = "yellow";
+        ctx.fillRect(this.x-2,this.y-10,4,20);
+    }
+}
 
-    draw() {
-        ctx.fillStyle = this.color;
+class MagicBall {
+    constructor(x,y){
+        this.x = x;
+        this.y = y;
+        this.speed = 5;
+        this.size = 12;
+    }
+    update(){
+        this.y -= this.speed;
+    }
+    draw(){
+        ctx.fillStyle = "#aa00ff";
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+        ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
         ctx.fill();
     }
+}
 
-    update(player) {
-        // Simple boss movement
-        const dx = player.x - this.x;
-        const dy = player.y - this.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if(dist > 0) {
-            this.x += (dx/dist) * 1.2;
-            this.y += (dy/dist) * 1.2;
-        }
-        // Boss attack patterns could go here
+class Slash {
+    constructor(x,y){
+        this.x = x;
+        this.y = y;
+        this.size = 50;
+        this.life = 10;
+    }
+    update(){
+        this.life--;
+    }
+    draw(){
+        ctx.strokeStyle = "white";
+        ctx.beginPath();
+        ctx.arc(this.x,this.y,this.size,0,Math.PI);
+        ctx.stroke();
     }
 }
 
-// =================== GAME WORLD =================== //
-const enemies = [];
-for(let i=0;i<5;i++){
-    enemies.push(new Enemy(Math.random()*canvas.width, Math.random()*canvas.height));
+let projectiles = [];
+
+// ================= UI =================
+function updateUI(){
+    document.getElementById("ui").innerText =
+        `HP: ${Math.floor(player.hp)} | Level: ${player.level} | XP: ${player.xp} | Weapon: ${selectedWeapon}`;
 }
 
-let boss = null;
-
-// =================== INPUT =================== //
-const keys = {};
-window.addEventListener('keydown', e => keys[e.key] = true);
-window.addEventListener('keyup', e => keys[e.key] = false);
-
-// =================== UI =================== //
-function updateUI() {
-    const stats = document.getElementById('stats');
-    stats.innerText = `HP: ${Math.floor(player.hp)} | XP: ${player.xp} | Level: ${player.level}`;
-}
-
-// =================== MAIN MENU =================== //
-function drawMenu() {
+// ================= MENU =================
+function drawMenu(){
     ctx.fillStyle = "#0b0b17";
     ctx.fillRect(0,0,canvas.width,canvas.height);
-
-    ctx.fillStyle = "#00ffcc";
+    ctx.fillStyle = "#00ffff";
     ctx.font = "60px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("Shangri-La RPG", canvas.width/2, canvas.height/2 - 60);
+    ctx.fillText("TOP DOWN RPG", canvas.width/2, canvas.height/2 - 40);
+    ctx.font = "25px monospace";
+    ctx.fillText("Press ENTER", canvas.width/2, canvas.height/2 + 20);
 
-    ctx.font = "30px monospace";
-    ctx.fillText("Press ENTER to Start", canvas.width/2, canvas.height/2 + 20);
+    if(keys["Enter"]) gameState = "weaponSelect";
+}
 
-    if(keys['Enter']) {
-        gameState = "playing";
+// ================= WEAPON SELECT =================
+const weapons = ["Sword","Bow","Staff"];
+
+function drawWeaponSelect(){
+    ctx.fillStyle = "#111122";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "white";
+    ctx.font = "40px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("Choose Your Weapon", canvas.width/2, 150);
+
+    weapons.forEach((w,i)=>{
+        ctx.fillStyle = "#00ffff";
+        ctx.fillRect(canvas.width/2 - 150, 250 + i*100, 300, 60);
+        ctx.fillStyle = "black";
+        ctx.fillText(w, canvas.width/2, 290 + i*100);
+    });
+}
+
+function handleClick(e){
+    if(gameState === "weaponSelect"){
+        weapons.forEach((w,i)=>{
+            let x = canvas.width/2 - 150;
+            let y = 250 + i*100;
+            if(e.clientX > x && e.clientX < x+300 &&
+               e.clientY > y && e.clientY < y+60){
+                selectedWeapon = w;
+                gameState = "playing";
+            }
+        });
     }
 }
 
-// =================== GAME LOOP =================== //
-function gameLoop() {
+// ================= GAME LOOP =================
+function loop(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    if(gameState === "menu") {
-        drawMenu();
-    } else if(gameState === "playing") {
-        // Draw background
+    if(gameState === "menu") drawMenu();
+    else if(gameState === "weaponSelect") drawWeaponSelect();
+    else if(gameState === "playing"){
         ctx.fillStyle = "#1a1a2e";
         ctx.fillRect(0,0,canvas.width,canvas.height);
 
-        player.move(keys);
+        player.move();
+        if(keys[" "]) player.attack();
+        if(player.weaponCooldown > 0) player.weaponCooldown--;
+
         player.draw();
 
-        // Enemies
-        enemies.forEach(e => {
-            e.update(player);
-            e.draw();
+        enemies.forEach((enemy, ei)=>{
+            enemy.update();
+            enemy.draw();
+
+            projectiles.forEach((p,pi)=>{
+                const dx = enemy.x - p.x;
+                const dy = enemy.y - p.y;
+                if(Math.sqrt(dx*dx+dy*dy) < enemy.size){
+                    enemy.hp -= 20;
+                    projectiles.splice(pi,1);
+                }
+            });
+
+            if(enemy.hp <= 0){
+                player.gainXP(20);
+                enemies.splice(ei,1);
+                enemies.push(new Enemy());
+            }
         });
 
-        // Spawn boss when player reaches level 3
-        if(player.level >= 3 && !boss) boss = new Boss(canvas.width/2, canvas.height/4);
-
-        if(boss){
-            boss.update(player);
-            boss.draw();
-        }
+        projectiles.forEach((p,i)=>{
+            p.update();
+            p.draw();
+            if(p.life !== undefined && p.life <= 0)
+                projectiles.splice(i,1);
+        });
 
         updateUI();
 
-        if(player.hp <= 0){
-            ctx.fillStyle = "#ff0000";
-            ctx.font = "60px monospace";
-            ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
-        }
+        if(player.hp <= 0) gameState = "gameOver";
+    }
+    else if(gameState === "gameOver"){
+        ctx.fillStyle = "black";
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = "red";
+        ctx.font = "60px monospace";
+        ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
     }
 
-    requestAnimationFrame(gameLoop);
+    requestAnimationFrame(loop);
 }
 
-gameLoop();
+loop();
 </script>
 </body>
 </html>
