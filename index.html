@@ -1,1 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Shangri-La RPG Prototype</title>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #0b0b17;
+    font-family: monospace;
+  }
+  canvas {
+    display: block;
+    background: #1a1a2e;
+  }
+  #ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    color: #fff;
+    z-index: 100;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui">
+  <div id="stats">HP: 100 | XP: 0 | Level: 1</div>
+</div>
+<script>
+// =================== GAME FRAME =================== //
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+});
+
+// =================== GAME STATE =================== //
+let gameState = "menu"; // menu, playing, boss
+
+// =================== PLAYER CLASS =================== //
+class Player {
+    constructor() {
+        this.x = canvas.width/2;
+        this.y = canvas.height/2;
+        this.size = 30;
+        this.color = "#00ffcc";
+        this.speed = 4;
+        this.hp = 100;
+        this.xp = 0;
+        this.level = 1;
+    }
+
+    draw() {
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y - this.size/2);
+        ctx.lineTo(this.x - this.size/2, this.y + this.size/2);
+        ctx.lineTo(this.x + this.size/2, this.y + this.size/2);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    move(keys) {
+        if(keys['ArrowUp'] || keys['w']) this.y -= this.speed;
+        if(keys['ArrowDown'] || keys['s']) this.y += this.speed;
+        if(keys['ArrowLeft'] || keys['a']) this.x -= this.speed;
+        if(keys['ArrowRight'] || keys['d']) this.x += this.speed;
+
+        // Keep player inside canvas
+        this.x = Math.max(this.size/2, Math.min(canvas.width - this.size/2, this.x));
+        this.y = Math.max(this.size/2, Math.min(canvas.height - this.size/2, this.y));
+    }
+
+    gainXP(amount) {
+        this.xp += amount;
+        if(this.xp >= this.level * 50) {
+            this.level++;
+            this.xp = 0;
+            this.hp += 20;
+        }
+    }
+}
+
+const player = new Player();
+
+// =================== ENEMY CLASS =================== //
+class Enemy {
+    constructor(x, y, size=25, color="#ff3333", hp=30) {
+        this.x = x;
+        this.y = y;
+        this.size = size;
+        this.color = color;
+        this.hp = hp;
+    }
+
+    draw() {
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
+    }
+
+    update(player) {
+        // Simple chasing AI
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if(dist > 0) {
+            this.x += (dx/dist) * 1.5;
+            this.y += (dy/dist) * 1.5;
+        }
+
+        // Collision damage
+        if(dist < (this.size/2 + player.size/2)) {
+            player.hp -= 0.1; // continuous damage
+        }
+    }
+}
+
+// =================== BOSS CLASS =================== //
+class Boss {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.size = 80;
+        this.color = "#aa33ff";
+        this.hp = 500;
+        this.phase = 1;
+    }
+
+    draw() {
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    update(player) {
+        // Simple boss movement
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if(dist > 0) {
+            this.x += (dx/dist) * 1.2;
+            this.y += (dy/dist) * 1.2;
+        }
+        // Boss attack patterns could go here
+    }
+}
+
+// =================== GAME WORLD =================== //
+const enemies = [];
+for(let i=0;i<5;i++){
+    enemies.push(new Enemy(Math.random()*canvas.width, Math.random()*canvas.height));
+}
+
+let boss = null;
+
+// =================== INPUT =================== //
+const keys = {};
+window.addEventListener('keydown', e => keys[e.key] = true);
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+// =================== UI =================== //
+function updateUI() {
+    const stats = document.getElementById('stats');
+    stats.innerText = `HP: ${Math.floor(player.hp)} | XP: ${player.xp} | Level: ${player.level}`;
+}
+
+// =================== MAIN MENU =================== //
+function drawMenu() {
+    ctx.fillStyle = "#0b0b17";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.fillStyle = "#00ffcc";
+    ctx.font = "60px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("Shangri-La RPG", canvas.width/2, canvas.height/2 - 60);
+
+    ctx.font = "30px monospace";
+    ctx.fillText("Press ENTER to Start", canvas.width/2, canvas.height/2 + 20);
+
+    if(keys['Enter']) {
+        gameState = "playing";
+    }
+}
+
+// =================== GAME LOOP =================== //
+function gameLoop() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    if(gameState === "menu") {
+        drawMenu();
+    } else if(gameState === "playing") {
+        // Draw background
+        ctx.fillStyle = "#1a1a2e";
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+
+        player.move(keys);
+        player.draw();
+
+        // Enemies
+        enemies.forEach(e => {
+            e.update(player);
+            e.draw();
+        });
+
+        // Spawn boss when player reaches level 3
+        if(player.level >= 3 && !boss) boss = new Boss(canvas.width/2, canvas.height/4);
+
+        if(boss){
+            boss.update(player);
+            boss.draw();
+        }
+
+        updateUI();
+
+        if(player.hp <= 0){
+            ctx.fillStyle = "#ff0000";
+            ctx.font = "60px monospace";
+            ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
+        }
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
