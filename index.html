@@ -1,100 +1,81 @@
 <script>
+// ================= CANVAS =================
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-canvas.width = innerWidth;
-canvas.height = innerHeight;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
+// ================= STATE =================
 let gameState = "menu";
-let selectedWeapon = null;
+let selectedWeapon = "Sword";
 
+// ================= INPUT =================
 const keys = {};
-addEventListener("keydown", e => keys[e.key] = true);
-addEventListener("keyup", e => keys[e.key] = false);
-addEventListener("click", handleClick);
+window.addEventListener("keydown", e => keys[e.key] = true);
+window.addEventListener("keyup", e => keys[e.key] = false);
 
 // ================= UTIL =================
-function dist(a,b,c,d){ return Math.hypot(a-c,b-d); }
+function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
 
 // ================= PLAYER =================
 class Player {
     constructor(){
         this.x = canvas.width/2;
         this.y = canvas.height/2;
-        this.size = 22;
-        this.speed = 4;
         this.hp = 100;
         this.level = 1;
         this.xp = 0;
-        this.cooldown = 0;
-        this.angle = 0;
+        this.speed = 3.5;
+        this.attackCooldown = 0;
     }
 
     move(){
-        if(keys.w||keys.ArrowUp) this.y -= this.speed;
-        if(keys.s||keys.ArrowDown) this.y += this.speed;
-        if(keys.a||keys.ArrowLeft) this.x -= this.speed;
-        if(keys.d||keys.ArrowRight) this.x += this.speed;
-    }
-
-    autoAim(){
-        let nearest = null;
-        let min = Infinity;
-        enemies.forEach(e=>{
-            const d = dist(this.x,this.y,e.x,e.y);
-            if(d < min){ min=d; nearest=e; }
-        });
-        if(nearest){
-            this.angle = Math.atan2(nearest.y-this.y,nearest.x-this.x);
-            return nearest;
-        }
-        return null;
-    }
-
-    attack(){
-        if(this.cooldown>0) return;
-        const target = this.autoAim();
-        if(!target) return;
-
-        if(selectedWeapon==="Sword"){
-            slashes.push(new Slash(this.x,this.y,this.angle));
-            this.cooldown = 20;
-        }
-        if(selectedWeapon==="Bow"){
-            projectiles.push(new Arrow(this.x,this.y,this.angle));
-            this.cooldown = 25;
-        }
-        if(selectedWeapon==="Staff"){
-            projectiles.push(new Magic(this.x,this.y,target));
-            this.cooldown = 35;
-        }
+        if(keys.w) this.y -= this.speed;
+        if(keys.s) this.y += this.speed;
+        if(keys.a) this.x -= this.speed;
+        if(keys.d) this.x += this.speed;
     }
 
     draw(){
-        ctx.save();
-        ctx.translate(this.x,this.y);
-
-        // body
-        ctx.fillStyle="#00ffff";
+        // ---- cloak ----
+        ctx.fillStyle = "#1e2a44";
         ctx.beginPath();
-        ctx.arc(0,5,10,0,Math.PI*2);
+        ctx.arc(this.x, this.y+8, 22, Math.PI, 0);
         ctx.fill();
 
-        // head
-        ctx.fillStyle="#e0ffff";
+        // ---- body ----
+        ctx.fillStyle = "#2ee6d6";
+        ctx.fillRect(this.x-8, this.y, 16, 18);
+
+        // ---- head ----
+        ctx.fillStyle = "#ffffff";
         ctx.beginPath();
-        ctx.arc(0,-10,6,0,Math.PI*2);
+        ctx.arc(this.x, this.y-6, 8, 0, Math.PI*2);
         ctx.fill();
 
-        // cloak
-        ctx.fillStyle="#0088aa";
-        ctx.beginPath();
-        ctx.moveTo(-12,8);
-        ctx.lineTo(12,8);
-        ctx.lineTo(0,30);
-        ctx.closePath();
-        ctx.fill();
+        // ---- eyes ----
+        ctx.fillStyle = "#000";
+        ctx.fillRect(this.x-3, this.y-7, 2, 2);
+        ctx.fillRect(this.x+1, this.y-7, 2, 2);
+    }
 
-        ctx.restore();
+    gainXP(x){
+        this.xp += x;
+        if(this.xp >= this.level*40){
+            this.xp = 0;
+            this.level++;
+            this.hp += 20;
+        }
+    }
+
+    attack(){
+        if(this.attackCooldown > 0) return;
+
+        const target = getNearestEnemy();
+        if(!target) return;
+
+        slashes.push(new Slash(this, target));
+        this.attackCooldown = 25;
     }
 }
 
@@ -105,171 +86,121 @@ class Enemy {
     constructor(){
         this.x = Math.random()*canvas.width;
         this.y = Math.random()*canvas.height;
-        this.size = 18;
-        this.hp = 40;
+        this.hp = 50;
+        this.size = 20;
     }
+
     update(){
-        const a = Math.atan2(player.y-this.y,player.x-this.x);
-        this.x += Math.cos(a)*1.3;
-        this.y += Math.sin(a)*1.3;
-        if(dist(this.x,this.y,player.x,player.y)<20) player.hp-=0.2;
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const d = Math.hypot(dx,dy);
+        this.x += dx/d * 1.2;
+        this.y += dy/d * 1.2;
+
+        if(d < 22) player.hp -= 0.15;
     }
+
     draw(){
-        ctx.fillStyle="#ff4444";
-        ctx.beginPath();
-        ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
-        ctx.fill();
+        ctx.fillStyle = "#ff4b4b";
+        ctx.fillRect(this.x-this.size/2, this.y-this.size/2, this.size, this.size);
     }
 }
 
-let enemies=[];
-for(let i=0;i<6;i++) enemies.push(new Enemy());
+let enemies = Array.from({length:6}, ()=>new Enemy());
+
+// ================= AUTO AIM =================
+function getNearestEnemy(){
+    let closest = null;
+    let min = Infinity;
+    enemies.forEach(e=>{
+        const d = dist(player,e);
+        if(d < min){
+            min = d;
+            closest = e;
+        }
+    });
+    return closest;
+}
 
 // ================= SLASH =================
 class Slash {
-    constructor(x,y,angle){
-        this.x=x;
-        this.y=y;
-        this.angle=angle;
-        this.life=12;
+    constructor(player, enemy){
+        this.cx = player.x;
+        this.cy = player.y;
+        this.angle = Math.atan2(enemy.y-player.y, enemy.x-player.x);
+        this.life = 12;
+        this.hit = false;
     }
-    update(){ this.life--; }
-    draw(){
-        ctx.strokeStyle="white";
-        ctx.lineWidth=6;
-        ctx.beginPath();
-        ctx.arc(
-            this.x,
-            this.y,
-            50,
-            this.angle-0.8+(12-this.life)*0.05,
-            this.angle+0.8+(12-this.life)*0.05
-        );
-        ctx.stroke();
-    }
-}
 
-let slashes=[];
-
-// ================= PROJECTILES =================
-class Arrow {
-    constructor(x,y,a){
-        this.x=x;
-        this.y=y;
-        this.vx=Math.cos(a)*8;
-        this.vy=Math.sin(a)*8;
-    }
-    update(){ this.x+=this.vx; this.y+=this.vy; }
-    draw(){
-        ctx.strokeStyle="yellow";
-        ctx.beginPath();
-        ctx.moveTo(this.x,this.y);
-        ctx.lineTo(this.x-this.vx*2,this.y-this.vy*2);
-        ctx.stroke();
-    }
-}
-
-class Magic {
-    constructor(x,y,target){
-        this.x=x;
-        this.y=y;
-        this.target=target;
-    }
     update(){
-        const a=Math.atan2(this.target.y-this.y,this.target.x-this.x);
-        this.x+=Math.cos(a)*4;
-        this.y+=Math.sin(a)*4;
-    }
-    draw(){
-        ctx.fillStyle="#aa00ff";
-        ctx.beginPath();
-        ctx.arc(this.x,this.y,6,0,Math.PI*2);
-        ctx.fill();
-    }
-}
+        this.life--;
+        const arcAngle = this.angle - 0.8 + (12-this.life)*0.13;
 
-let projectiles=[];
-
-// ================= MENU =================
-const weapons=["Sword","Bow","Staff"];
-
-function handleClick(e){
-    if(gameState==="weapon"){
-        weapons.forEach((w,i)=>{
-            if(e.clientX>canvas.width/2-150 &&
-               e.clientX<canvas.width/2+150 &&
-               e.clientY>250+i*90 &&
-               e.clientY<310+i*90){
-                selectedWeapon=w;
-                gameState="play";
+        enemies.forEach((e,i)=>{
+            if(!this.hit && dist({x:this.cx,y:this.cy}, e) < 45){
+                e.hp -= 35;
+                this.hit = true;
+                if(e.hp <= 0){
+                    enemies.splice(i,1);
+                    enemies.push(new Enemy());
+                    player.gainXP(20);
+                }
             }
         });
+
+        this.arcAngle = arcAngle;
+    }
+
+    draw(){
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(this.cx, this.cy, 40, this.arcAngle, this.arcAngle+0.8);
+        ctx.stroke();
+        ctx.lineWidth = 1;
     }
 }
 
-function drawMenu(){
-    ctx.fillStyle="#000";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle="#00ffff";
-    ctx.font="60px monospace";
-    ctx.textAlign="center";
-    ctx.fillText("RPG",canvas.width/2,canvas.height/2);
-    ctx.font="25px monospace";
-    ctx.fillText("Press ENTER",canvas.width/2,canvas.height/2+40);
-    if(keys.Enter) gameState="weapon";
-}
+let slashes = [];
 
-function drawWeapon(){
-    ctx.fillStyle="#111";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle="white";
-    ctx.font="40px monospace";
-    ctx.fillText("Choose Weapon",canvas.width/2,150);
-    weapons.forEach((w,i)=>{
-        ctx.fillStyle="#00ffff";
-        ctx.fillRect(canvas.width/2-150,250+i*90,300,60);
-        ctx.fillStyle="black";
-        ctx.fillText(w,canvas.width/2,290+i*90);
-    });
+// ================= UI =================
+function drawUI(){
+    ctx.fillStyle = "#fff";
+    ctx.font = "14px monospace";
+    ctx.fillText(`HP:${Math.floor(player.hp)} LV:${player.level} XP:${player.xp}`, 10, 20);
 }
 
 // ================= LOOP =================
 function loop(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "#0b1020";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
 
-    if(gameState==="menu") drawMenu();
-    else if(gameState==="weapon") drawWeapon();
-    else if(gameState==="play"){
-        player.move();
-        if(keys[" "]) player.attack();
-        if(player.cooldown>0) player.cooldown--;
+    player.move();
+    if(keys[" "]) player.attack();
+    if(player.attackCooldown>0) player.attackCooldown--;
 
-        player.draw();
+    player.draw();
 
-        enemies.forEach((e,ei)=>{
-            e.update();
-            e.draw();
-            slashes.forEach(s=>{
-                if(dist(e.x,e.y,s.x,s.y)<50) e.hp-=3;
-            });
-            projectiles.forEach((p,pi)=>{
-                if(dist(e.x,e.y,p.x,p.y)<18){
-                    e.hp-=10;
-                    projectiles.splice(pi,1);
-                }
-            });
-            if(e.hp<=0){
-                enemies.splice(ei,1);
-                enemies.push(new Enemy());
-            }
-        });
+    enemies.forEach(e=>{ e.update(); e.draw(); });
 
-        slashes.forEach((s,i)=>{ s.update(); s.draw(); if(s.life<=0) slashes.splice(i,1); });
-        projectiles.forEach((p,i)=>{ p.update(); p.draw(); });
+    slashes.forEach((s,i)=>{
+        s.update();
+        s.draw();
+        if(s.life<=0) slashes.splice(i,1);
+    });
 
+    drawUI();
+
+    if(player.hp<=0){
+        ctx.fillStyle="red";
+        ctx.font="48px monospace";
+        ctx.fillText("GAME OVER", canvas.width/2-140, canvas.height/2);
+        return;
     }
 
     requestAnimationFrame(loop);
 }
+
 loop();
 </script>
